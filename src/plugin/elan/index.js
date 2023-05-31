@@ -46,28 +46,28 @@ export default class ElanPlugin {
      */
     static create(params) {
         return {
-            name: 'elan',
+            name: "elan",
             deferInit: params && params.deferInit ? params.deferInit : false,
             params: params,
-            instance: ElanPlugin
+            instance: ElanPlugin,
         };
     }
 
     Types = {
-        ALIGNABLE_ANNOTATION: 'ALIGNABLE_ANNOTATION',
-        REF_ANNOTATION: 'REF_ANNOTATION'
+        ALIGNABLE_ANNOTATION: "ALIGNABLE_ANNOTATION",
+        REF_ANNOTATION: "REF_ANNOTATION",
     };
 
     constructor(params, ws) {
         this.data = null;
         this.params = params;
         this.container =
-            'string' == typeof params.container
+            "string" == typeof params.container
                 ? document.querySelector(params.container)
                 : params.container;
 
         if (!this.container) {
-            throw Error('No container for ELAN');
+            throw Error("No container for ELAN");
         }
     }
 
@@ -80,24 +80,37 @@ export default class ElanPlugin {
     }
 
     destroy() {
-        this.container.removeEventListener('click', this._onClick);
+        this.container.removeEventListener("click", this._onClick);
         this.container.removeChild(this.table);
     }
 
-    load(url) {
-        this.loadXML(url, xml => {
-            this.data = this.parseElan(xml);
-            this.render();
-            this.fireEvent('ready', this.data);
-        });
+    error() {
+        throw Error("Loading error");
     }
 
-    loadXML(url, callback) {
+    load(url) {
+        this.loadXML(
+            url,
+            (xml) => {
+                this.data = this.parseElan(xml);
+                this.render();
+                this.fireEvent("ready", this.data);
+            },
+            (e) => {
+                this.fireEvent("error", true);
+            }
+        );
+    }
+
+    loadXML(url, callback, onError) {
         const xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.responseType = 'document';
+        xhr.addEventListener("error", (e) => {
+            onError && onError(e);
+        });
+        xhr.open("GET", url, true);
+        xhr.responseType = "document";
         xhr.send();
-        xhr.addEventListener('load', e => {
+        xhr.addEventListener("load", (e) => {
             callback && callback(e.target.responseXML);
         });
     }
@@ -111,49 +124,49 @@ export default class ElanPlugin {
             timeOrder: {},
             tiers: [],
             annotations: {},
-            alignableAnnotations: []
+            alignableAnnotations: [],
         };
 
-        const header = xml.querySelector('HEADER');
+        const header = xml.querySelector("HEADER");
         const inMilliseconds =
-            header.getAttribute('TIME_UNITS') == 'milliseconds';
-        const media = header.querySelector('MEDIA_DESCRIPTOR');
-        data.media.url = media.getAttribute('MEDIA_URL');
-        data.media.type = media.getAttribute('MIME_TYPE');
+            header.getAttribute("TIME_UNITS") == "milliseconds";
+        const media = header.querySelector("MEDIA_DESCRIPTOR");
+        data.media.url = media.getAttribute("MEDIA_URL");
+        data.media.type = media.getAttribute("MIME_TYPE");
 
-        const timeSlots = xml.querySelectorAll('TIME_ORDER TIME_SLOT');
+        const timeSlots = xml.querySelectorAll("TIME_ORDER TIME_SLOT");
         const timeOrder = {};
-        _forEach.call(timeSlots, slot => {
-            let value = parseFloat(slot.getAttribute('TIME_VALUE'));
+        _forEach.call(timeSlots, (slot) => {
+            let value = parseFloat(slot.getAttribute("TIME_VALUE"));
             // If in milliseconds, convert to seconds with rounding
             if (inMilliseconds) {
                 value = Math.round(value * 1e2) / 1e5;
             }
-            timeOrder[slot.getAttribute('TIME_SLOT_ID')] = value;
+            timeOrder[slot.getAttribute("TIME_SLOT_ID")] = value;
         });
 
-        data.tiers = _map.call(xml.querySelectorAll('TIER'), tier => ({
-            id: tier.getAttribute('TIER_ID'),
-            linguisticTypeRef: tier.getAttribute('LINGUISTIC_TYPE_REF'),
-            defaultLocale: tier.getAttribute('DEFAULT_LOCALE'),
+        data.tiers = _map.call(xml.querySelectorAll("TIER"), (tier) => ({
+            id: tier.getAttribute("TIER_ID"),
+            linguisticTypeRef: tier.getAttribute("LINGUISTIC_TYPE_REF"),
+            defaultLocale: tier.getAttribute("DEFAULT_LOCALE"),
             annotations: _map.call(
-                tier.querySelectorAll('REF_ANNOTATION, ALIGNABLE_ANNOTATION'),
-                node => {
+                tier.querySelectorAll("REF_ANNOTATION, ALIGNABLE_ANNOTATION"),
+                (node) => {
                     const annot = {
                         type: node.nodeName,
-                        id: node.getAttribute('ANNOTATION_ID'),
-                        ref: node.getAttribute('ANNOTATION_REF'),
+                        id: node.getAttribute("ANNOTATION_ID"),
+                        ref: node.getAttribute("ANNOTATION_REF"),
                         value: node
-                            .querySelector('ANNOTATION_VALUE')
-                            .textContent.trim()
+                            .querySelector("ANNOTATION_VALUE")
+                            .textContent.trim(),
                     };
 
                     if (this.Types.ALIGNABLE_ANNOTATION == annot.type) {
                         // Add start & end to alignable annotation
                         annot.start =
-                            timeOrder[node.getAttribute('TIME_SLOT_REF1')];
+                            timeOrder[node.getAttribute("TIME_SLOT_REF1")];
                         annot.end =
-                            timeOrder[node.getAttribute('TIME_SLOT_REF2')];
+                            timeOrder[node.getAttribute("TIME_SLOT_REF2")];
                         // Add to the list of alignable annotations
                         data.alignableAnnotations.push(annot);
                     }
@@ -163,12 +176,12 @@ export default class ElanPlugin {
 
                     return annot;
                 }
-            )
+            ),
         }));
 
         // Create JavaScript references between annotations
-        data.tiers.forEach(tier => {
-            tier.annotations.forEach(annot => {
+        data.tiers.forEach((tier) => {
+            tier.annotations.forEach((annot) => {
                 if (null != annot.ref) {
                     annot.reference = data.annotations[annot.ref];
                 }
@@ -193,14 +206,14 @@ export default class ElanPlugin {
         // apply tiers filter
         let tiers = this.data.tiers;
         if (this.params.tiers) {
-            tiers = tiers.filter(tier => tier.id in this.params.tiers);
+            tiers = tiers.filter((tier) => tier.id in this.params.tiers);
         }
 
         // denormalize references to alignable annotations
         const backRefs = {};
         let indeces = {};
         tiers.forEach((tier, index) => {
-            tier.annotations.forEach(annot => {
+            tier.annotations.forEach((annot) => {
                 if (
                     annot.reference &&
                     annot.reference.type == this.Types.ALIGNABLE_ANNOTATION
@@ -216,82 +229,84 @@ export default class ElanPlugin {
         indeces = Object.keys(indeces).sort();
 
         this.renderedAlignable = this.data.alignableAnnotations.filter(
-            alignable => backRefs[alignable.id]
+            (alignable) => backRefs[alignable.id]
         );
 
         // table
-        const table = (this.table = document.createElement('table'));
-        table.className = 'wavesurfer-annotations';
+        const table = (this.table = document.createElement("table"));
+        table.className = "wavesurfer-annotations";
 
         // head
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
+        const thead = document.createElement("thead");
+        const headRow = document.createElement("tr");
         thead.appendChild(headRow);
         table.appendChild(thead);
-        const th = document.createElement('th');
-        th.textContent = 'Time';
-        th.className = 'wavesurfer-time';
+        const th = document.createElement("th");
+        th.textContent = "Time";
+        th.className = "wavesurfer-time";
         headRow.appendChild(th);
-        indeces.forEach(index => {
+        indeces.forEach((index) => {
             const tier = tiers[index];
-            const th = document.createElement('th');
-            th.className = 'wavesurfer-tier-' + tier.id;
+            const th = document.createElement("th");
+            th.className = "wavesurfer-tier-" + tier.id;
             th.textContent = tier.id;
-            if (this.params.tiers) { th.style.width = this.params.tiers[tier.id]; }
+            if (this.params.tiers) {
+                th.style.width = this.params.tiers[tier.id];
+            }
             headRow.appendChild(th);
         });
 
         // body
-        const tbody = document.createElement('tbody');
+        const tbody = document.createElement("tbody");
         table.appendChild(tbody);
-        this.renderedAlignable.forEach(alignable => {
-            const row = document.createElement('tr');
-            row.id = 'wavesurfer-alignable-' + alignable.id;
+        this.renderedAlignable.forEach((alignable) => {
+            const row = document.createElement("tr");
+            row.id = "wavesurfer-alignable-" + alignable.id;
             tbody.appendChild(row);
 
-            const td = document.createElement('td');
-            td.className = 'wavesurfer-time';
+            const td = document.createElement("td");
+            td.className = "wavesurfer-time";
             td.textContent =
-                alignable.start.toFixed(1) + '–' + alignable.end.toFixed(1);
+                alignable.start.toFixed(1) + "–" + alignable.end.toFixed(1);
             row.appendChild(td);
 
             const backRef = backRefs[alignable.id];
-            indeces.forEach(index => {
+            indeces.forEach((index) => {
                 const tier = tiers[index];
-                const td = document.createElement('td');
+                const td = document.createElement("td");
                 const annotation = backRef[index];
                 if (annotation) {
-                    td.id = 'wavesurfer-annotation-' + annotation.id;
+                    td.id = "wavesurfer-annotation-" + annotation.id;
                     td.dataset.ref = alignable.id;
                     td.dataset.start = alignable.start;
                     td.dataset.end = alignable.end;
                     td.textContent = annotation.value;
                 }
-                td.className = 'wavesurfer-tier-' + tier.id;
+                td.className = "wavesurfer-tier-" + tier.id;
                 row.appendChild(td);
             });
         });
 
-        this.container.innerHTML = '';
+        this.container.innerHTML = "";
         this.container.appendChild(table);
     }
 
     bindClick() {
-        this._onClick = e => {
+        this._onClick = (e) => {
             const ref = e.target.dataset.ref;
             if (null != ref) {
                 const annot = this.data.annotations[ref];
                 if (annot) {
-                    this.fireEvent('select', annot.start, annot.end);
+                    this.fireEvent("select", annot.start, annot.end);
                 }
             }
         };
-        this.container.addEventListener('click', this._onClick);
+        this.container.addEventListener("click", this._onClick);
     }
 
     getRenderedAnnotation(time) {
         let result;
-        this.renderedAlignable.some(annotation => {
+        this.renderedAlignable.some((annotation) => {
             if (annotation.start <= time && annotation.end >= time) {
                 result = annotation;
                 return true;
@@ -302,6 +317,6 @@ export default class ElanPlugin {
     }
 
     getAnnotationNode(annotation) {
-        return document.getElementById('wavesurfer-alignable-' + annotation.id);
+        return document.getElementById("wavesurfer-alignable-" + annotation.id);
     }
 }
